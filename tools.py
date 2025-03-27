@@ -389,5 +389,276 @@ def statistical_test(
     
     except Exception as e:
         return f"Failed to perform statistical test. Error: {repr(e)}"
+    
+@tool
+def clean_data(
+    data: Annotated[pd.DataFrame, "DataFrame to clean"],
+    operations: Annotated[list, "List of cleaning operations to perform"],
+    columns: Annotated[list, "Columns to apply operations to"] = None
+) -> pd.DataFrame:
+    """
+    Clean and preprocess DataFrame data.
+    
+    Args:
+        data: DataFrame to clean
+        operations: List of operations to perform, can include:
+                   ['drop_na', 'fill_na_mean', 'fill_na_median', 'fill_na_mode', 
+                    'remove_outliers', 'normalize', 'standardize', 'encode_categorical']
+        columns: Columns to apply operations to. If None, applies to all suitable columns.
+        
+    Returns:
+        pd.DataFrame: Cleaned DataFrame
+    """
+    try:
+        result_df = data.copy()
+        
+        if columns is None:
+            # Determine suitable columns based on data types
+            numeric_cols = result_df.select_dtypes(include=[np.number]).columns.tolist()
+            categorical_cols = result_df.select_dtypes(include=['object', 'category']).columns.tolist()
+        else:
+            # Verify all specified columns exist
+            for col in columns:
+                if col not in result_df.columns:
+                    return f"Column '{col}' not found in DataFrame"
+            
+            numeric_cols = [col for col in columns if col in result_df.select_dtypes(include=[np.number]).columns]
+            categorical_cols = [col for col in columns if col in result_df.select_dtypes(include=['object', 'category']).columns]
+        
+        # Apply specified operations
+        for operation in operations:
+            if operation == 'drop_na':
+                if columns:
+                    result_df = result_df.dropna(subset=columns)
+                else:
+                    result_df = result_df.dropna()
+                    
+            elif operation == 'fill_na_mean':
+                for col in numeric_cols:
+                    result_df[col] = result_df[col].fillna(result_df[col].mean())
+                    
+            elif operation == 'fill_na_median':
+                for col in numeric_cols:
+                    result_df[col] = result_df[col].fillna(result_df[col].median())
+                    
+            elif operation == 'fill_na_mode':
+                for col in columns if columns else result_df.columns:
+                    result_df[col] = result_df[col].fillna(result_df[col].mode()[0] if not result_df[col].mode().empty else None)
+                    
+            elif operation == 'remove_outliers':
+                for col in numeric_cols:
+                    Q1 = result_df[col].quantile(0.25)
+                    Q3 = result_df[col].quantile(0.75)
+                    IQR = Q3 - Q1
+                    lower_bound = Q1 - 1.5 * IQR
+                    upper_bound = Q3 + 1.5 * IQR
+                    result_df = result_df[(result_df[col] >= lower_bound) & (result_df[col] <= upper_bound)]
+                    
+            elif operation == 'normalize':
+                for col in numeric_cols:
+                    min_val = result_df[col].min()
+                    max_val = result_df[col].max()
+                    if max_val > min_val:  # Prevent division by zero
+                        result_df[col] = (result_df[col] - min_val) / (max_val - min_val)
+                    
+            elif operation == 'standardize':
+                for col in numeric_cols:
+                    mean = result_df[col].mean()
+                    std = result_df[col].std()
+                    if std > 0:  # Prevent division by zero
+                        result_df[col] = (result_df[col] - mean) / std
+                    
+            elif operation == 'encode_categorical':
+                for col in categorical_cols:
+                    # Simple label encoding
+                    result_df[f"{col}_encoded"] = pd.Categorical(result_df[col]).codes
+            
+            else:
+                return f"Unsupported operation: {operation}"
+        
+        return result_df
+    
+    except Exception as e:
+        return f"Failed to clean data. Error: {repr(e)}"
+    
+@tool
+def group_and_aggregate(
+    data: Annotated[pd.DataFrame, "DataFrame to analyze"],
+    group_by: Annotated[list, "Columns to group by"],
+    aggregations: Annotated[dict, "Dictionary mapping columns to aggregation functions"]
+) -> pd.DataFrame:
+    """
+    Group DataFrame by specified columns and apply aggregation functions.
+    
+    Args:
+        data: DataFrame to analyze
+        group_by: Columns to group by
+        aggregations: Dictionary mapping columns to aggregation functions
+                      Example: {"sales": ["sum", "mean"], "quantity": "max"}
+        
+    Returns:
+        pd.DataFrame: DataFrame with grouped and aggregated data
+    """
+    try:
+        # Verify all columns exist
+        all_cols = group_by + list(aggregations.keys())
+        for col in all_cols:
+            if col not in data.columns:
+                return f"Column '{col}' not found in DataFrame"
+        
+        # Perform groupby and aggregation
+        result = data.groupby(group_by).agg(aggregations).reset_index()
+        
+        # Flatten multi-level column names if needed
+        if isinstance(result.columns, pd.MultiIndex):
+            result.columns = ['_'.join(col).strip('_') for col in result.columns.values]
+            
+        return result
+    
+    except Exception as e:
+        return f"Failed to group and aggregate data. Error: {repr(e)}"
+@tool
+def time_series_analysis(
+    data: Annotated[pd.DataFrame, "DataFrame containing time series data"],
+    date_column: Annotated[str, "Column containing dates"],
+    value_column: Annotated[str, "Column containing values to analyze"],
+    frequency: Annotated[str, "Frequency for resampling (D=daily, W=weekly, M=monthly, etc.)"] = None,
+    operations: Annotated[list, "List of operations to perform"] = ["trend", "seasonality", "moving_avg"]
+) -> dict:
+    """
+    Perform time series analysis on DataFrame data.
+    
+    Args:
+        data: DataFrame containing time series data
+        date_column: Column containing dates
+        value_column: Column containing values to analyze
+        frequency: Frequency for resampling (D=daily, W=weekly, M=monthly, etc.)
+        operations: List of operations to perform
+        
+    Returns:
+        dict: Dictionary with analysis results
+    """
+    try:
+        # Verify columns exist
+        if date_column not in data.columns:
+            return f"Date column '{date_column}' not found in DataFrame"
+        if value_column not in data.columns:
+            return f"Value column '{value_column}' not found in DataFrame"
+        
+        # Ensure date column is datetime
+        df = data.copy()
+        df[date_column] = pd.to_datetime(df[date_column])
+        
+        # Set date as index
+        df = df.set_index(date_column)
+        
+        # Resample if frequency is specified
+        if frequency:
+            df_resampled = df[value_column].resample(frequency).mean()
+        else:
+            df_resampled = df[value_column]
+        
+        results = {}
+        
+        # Calculate trend using rolling mean
+        if "trend" in operations:
+            window_size = max(len(df_resampled) // 10, 2)  # Use 10% of data points or at least 2
+            results["trend"] = df_resampled.rolling(window=window_size).mean().dropna().tolist()
+            results["trend_dates"] = df_resampled.rolling(window=window_size).mean().dropna().index.astype(str).tolist()
+        
+        # Calculate moving average
+        if "moving_avg" in operations:
+            short_window = max(len(df_resampled) // 20, 2)  # 5% of data points or at least 2
+            long_window = max(len(df_resampled) // 10, 2)   # 10% of data points or at least 2
+            
+            results["short_moving_avg"] = df_resampled.rolling(window=short_window).mean().dropna().tolist()
+            results["long_moving_avg"] = df_resampled.rolling(window=long_window).mean().dropna().tolist()
+            results["moving_avg_dates"] = df_resampled.rolling(window=long_window).mean().dropna().index.astype(str).tolist()
+        
+        # Calculate basic statistics
+        results["statistics"] = {
+            "mean": float(df_resampled.mean()),
+            "std": float(df_resampled.std()),
+            "min": float(df_resampled.min()),
+            "max": float(df_resampled.max()),
+            "count": int(df_resampled.count())
+        }
+        
+        # Calculate year-over-year or month-over-month growth if enough data
+        if len(df_resampled) > 12 and "growth_rate" in operations:
+            if frequency in ['M', 'MS', 'ME']:
+                # Month-over-month
+                results["monthly_growth"] = df_resampled.pct_change().dropna().tolist()
+                results["monthly_growth_dates"] = df_resampled.pct_change().dropna().index.astype(str).tolist()
+            elif frequency in ['Y', 'YS', 'YE', 'A']:
+                # Year-over-year
+                results["yearly_growth"] = df_resampled.pct_change().dropna().tolist()
+                results["yearly_growth_dates"] = df_resampled.pct_change().dropna().index.astype(str).tolist()
+        
+        return results
+    
+    except Exception as e:
+        return f"Failed to perform time series analysis. Error: {repr(e)}"
+    
+@tool
+def merge_dataframes(
+    left_df: Annotated[pd.DataFrame, "Left DataFrame"],
+    right_df: Annotated[pd.DataFrame, "Right DataFrame"],
+    how: Annotated[str, "Type of merge: 'inner', 'outer', 'left', or 'right'"] = "inner",
+    on: Annotated[list, "Column(s) to join on in both DataFrames"] = None,
+    left_on: Annotated[list, "Column(s) to join on in left DataFrame"] = None,
+    right_on: Annotated[list, "Column(s) to join on in right DataFrame"] = None
+) -> pd.DataFrame:
+    """
+    Merge two DataFrames based on common columns.
+    
+    Args:
+        left_df: Left DataFrame
+        right_df: Right DataFrame
+        how: Type of merge ('inner', 'outer', 'left', 'right')
+        on: Column(s) to join on in both DataFrames
+        left_on: Column(s) to join on in left DataFrame
+        right_on: Column(s) to join on in right DataFrame
+        
+    Returns:
+        pd.DataFrame: Merged DataFrame
+    """
+    try:
+        # Validate merge type
+        valid_merge_types = ['inner', 'outer', 'left', 'right']
+        if how not in valid_merge_types:
+            return f"Invalid merge type. Must be one of {valid_merge_types}"
+        
+        # Perform merge
+        if on is not None:
+            # Validate 'on' columns exist in both DataFrames
+            for col in on:
+                if col not in left_df.columns:
+                    return f"Column '{col}' not found in left DataFrame"
+                if col not in right_df.columns:
+                    return f"Column '{col}' not found in right DataFrame"
+            
+            result = pd.merge(left_df, right_df, how=how, on=on)
+            
+        elif left_on is not None and right_on is not None:
+            # Validate left_on columns exist in left DataFrame
+            for col in left_on:
+                if col not in left_df.columns:
+                    return f"Column '{col}' not found in left DataFrame"
+            
+            # Validate right_on columns exist in right DataFrame
+            for col in right_on:
+                if col not in right_df.columns:
+                    return f"Column '{col}' not found in right DataFrame"
+            
+            result = pd.merge(left_df, right_df, how=how, left_on=left_on, right_on=right_on)
+            
+        else:
+            return "Must specify either 'on' or both 'left_on' and 'right_on'"
+        
+        return result
+    
+    except Exception as e:
+        return f"Failed to merge DataFrames. Error: {repr(e)}"
 
     
