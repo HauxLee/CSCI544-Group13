@@ -23,9 +23,6 @@ from tools import (
 # Load environment variables from .env file
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
-deepinfra_api_key = os.getenv("DEEPINFRA_API_KEY")
-deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Read prompts.yaml file and extract agent prompts
 with open('prompts.yaml', 'r', encoding='utf-8') as file:
