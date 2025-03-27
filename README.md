@@ -1,4 +1,4 @@
-# Bias Agent Project
+# CSCI 544 Group 13 Project: Text-to-SQL Agent 
 
 ## Introduction
 
