@@ -1,0 +1,7 @@
+database:
+  mongodb:
+    database: mydatabase
+    uri: mongodb://localhost:27017
+  sqlite:
+    path: database\data\default.sqlite
+  type: sqlite
