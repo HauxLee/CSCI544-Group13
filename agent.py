@@ -73,9 +73,16 @@ def agent_node(state, agent, name):
 
 
 # Router function to guide the workflow based on conditions
-def execution_router(state) -> Literal["DECISION ANALYSIS", "wait_for_input", "call_tool"]:
+def execution_router(state) -> Literal["DECISION ANALYSIS", "wait_for_input", "call_tool", END]:
     messages = state["messages"]
     last_message = messages[-1]
+
+    # Check if this is a final message (contains output with no tool calls)
+    if (last_message.type == "ai" and not last_message.tool_calls and 
+        not "DECISION ANALYSIS" in last_message.content and 
+        not "COMPLETE TASK" in last_message.content):
+        # If this is a response that doesn't need further processing, end the flow
+        return END
 
     if last_message.tool_calls:
         return "call_tool"
@@ -162,7 +169,8 @@ workflow.add_conditional_edges(
     {
         "DECISION ANALYSIS": "Execution_Assistant",
         "call_tool": "Execution_Tools",  
-        "wait_for_input": "wait_for_input", 
+        "wait_for_input": "wait_for_input",
+        END: END,
     },
 )
 

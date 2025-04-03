@@ -9,3 +9,9 @@ venv/
 
 # VS Code settings
 .vscode/
+
+# Logs
+logs/
+
+# Backup files
+*.bak

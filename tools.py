@@ -1,7 +1,7 @@
 import os
 import json
 import re
-from typing import Annotated
+from typing import Annotated, Optional, Dict, Any
 import pandas as pd
 from scipy import stats
 import numpy as np
@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 from langchain_experimental.utilities import PythonREPL
 import math
 from scipy.stats import chi2_contingency
+import sqlglot
+from sqlglot.errors import ParseError
 matplotlib.use('Agg')
 
 
@@ -97,12 +99,19 @@ def get_user_input_tool(
         prompt (str, optional): Custom prompt to show the user. Defaults to None.
 
     Returns:
-        dict: A dictionary representing the user's input message to be added to the Agent's conversation.
+        dict: A dictionary representing the user's input message to be added to the Agent's conversation,
+             or a dictionary with an exit flag if the user wants to exit.
     """
     try:
-        # 使用自定义提示或默认提示
-        display_prompt = prompt if prompt else "(Send a message to the Agent): "
-        user_input_content = input(display_prompt)
+        display_prompt = prompt if prompt else "\n👤 You: "
+        user_input_content = input(display_prompt).strip().lower()
+
+        # Check for exit commands
+        if user_input_content in ['exit', 'quit']:
+            return {
+                "exit": True,
+                "message": "Goodbye! Thanks for using Database Assistant."
+            }
 
         combined_message = f"{user_input_content}"
 
@@ -122,42 +131,154 @@ def get_user_input_tool(
             "error": f"Failed to get user input. Error: {repr(e)}"
         }
 @tool
+def validate_sql_query(
+    query: Annotated[str, "The SQL query to validate."],
+    dialect: Annotated[str, "SQL dialect to use (e.g., 'sqlite', 'mysql', 'postgresql')"] = "sqlite"
+) -> dict:
+    """
+    Validates a SQL query using SQLGlot parser and optional schema validation.
+    
+    Args:
+        query (str): The SQL query to validate
+        dialect (str): SQL dialect to use for parsing (default: 'sqlite')
+        
+    Returns:
+        dict: Validation results containing status, messages, and parsed information
+    """
+    def parse_sql(sql: str) -> tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+        """Parse SQL and return validation status"""
+        try:
+            # Parse the SQL query
+            parsed = sqlglot.parse_one(sql, read=dialect)
+            
+            # Extract useful information from the parsed query
+            tables = parsed.find_all(sqlglot.exp.Table)
+            columns = parsed.find_all(sqlglot.exp.Column)
+            
+            # Get query type (SELECT, INSERT, etc.)
+            query_type = parsed.key
+            
+            return True, None, {
+                "query_type": query_type,
+                "tables": [str(t) for t in tables],
+                "columns": [str(c) for c in columns],
+                "normalized_sql": parsed.sql(dialect=dialect)
+            }
+            
+        except ParseError as e:
+            return False, f"SQL syntax error: {str(e)}", None
+        except Exception as e:
+            return False, f"Validation error: {str(e)}", None
+
+    def validate_against_schema(parsed_info: Dict[str, Any]) -> tuple[bool, Optional[str]]:
+        """Validate parsed SQL against database schema"""
+        try:
+            from database import DatabaseManager
+            
+            db_manager = DatabaseManager()
+            schema = db_manager.get_table_names()
+            
+            # Check if all referenced tables exist
+            for table in parsed_info["tables"]:
+                if table.upper() not in [t.upper() for t in schema]:
+                    return False, f"Table '{table}' does not exist in the database"
+            
+            return True, None
+            
+        except Exception as e:
+            return False, f"Schema validation error: {str(e)}"
+
+    try:
+        # Step 1: Parse and validate SQL syntax
+        is_valid, error_msg, parsed_info = parse_sql(query)
+        if not is_valid:
+            return {
+                "is_valid": False,
+                "message": error_msg,
+                "validation_step": "syntax",
+                "details": None
+            }
+        
+        # Step 2: Validate against schema if parsing succeeded
+        schema_valid, schema_error = validate_against_schema(parsed_info)
+        if not schema_valid:
+            return {
+                "is_valid": False,
+                "message": schema_error,
+                "validation_step": "schema",
+                "details": parsed_info
+            }
+        
+        # All validations passed
+        return {
+            "is_valid": True,
+            "message": "Query validation successful",
+            "validation_step": "complete",
+            "details": parsed_info
+        }
+        
+    except Exception as e:
+        return {
+            "is_valid": False,
+            "message": f"Unexpected error during validation: {str(e)}",
+            "validation_step": "error",
+            "details": None
+        }
+
+@tool
 def execute_sql_query(
     query: Annotated[str, "The SQL query to execute."],
-    db_name: Annotated[str, "Database name, default is the configured database."] = "default"
+    db_name: Annotated[str, "Database name, default is the configured database."] = "default",
+    max_retries: Annotated[int, "Maximum number of retry attempts"] = 3
 ) -> list:
     """
-    Execute a SQL query and return the results.
+    Execute a SQL query with validation and retry logic.
 
     Args:
         query (str): The SQL query to execute.
         db_name (str, optional): The name of the database to query.
+        max_retries (int, optional): Maximum number of retry attempts. Defaults to 3.
 
     Returns:
         list: The query results as a list of dictionaries.
     """
-    try:
-        from database import DatabaseManager
-
-        # Create database manager instance
-        db_manager = DatabaseManager()
-
-        # Execute the query
-        results = db_manager.execute_query(query)
-
-        # Convert SQLite Row objects to dictionaries
-        dict_results = []
-        for row in results:
-            # Convert each row to a dictionary
-            dict_row = {key: row[key] for key in row.keys()} if hasattr(row, 'keys') else dict(row)
-            dict_results.append(dict_row)
-
-        # Close connection
-        db_manager.disconnect()
-
-        return dict_results
-    except Exception as e:
-        return f"Failed to execute SQL query. Error: {repr(e)}"
+    attempt = 0
+    last_error = None
+    
+    while attempt < max_retries:
+        try:
+            # First validate the query
+            validation_result = validate_sql_query.invoke({"query": query})
+            if not validation_result["is_valid"]:
+                return f"Query validation failed: {validation_result['message']}"
+            
+            from database import DatabaseManager
+            
+            # Create database manager instance
+            db_manager = DatabaseManager()
+            
+            # Execute the query
+            results = db_manager.execute_query(query)
+            
+            # Convert SQLite Row objects to dictionaries
+            dict_results = []
+            for row in results:
+                # Convert each row to a dictionary
+                dict_row = {key: row[key] for key in row.keys()} if hasattr(row, 'keys') else dict(row)
+                dict_results.append(dict_row)
+            
+            # Close connection
+            db_manager.disconnect()
+            
+            return dict_results
+            
+        except Exception as e:
+            last_error = str(e)
+            attempt += 1
+            if attempt < max_retries:
+                continue
+            
+    return f"Failed to execute SQL query after {max_retries} attempts. Last error: {last_error}"
 
 
 @tool
