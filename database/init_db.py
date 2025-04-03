@@ -30,7 +30,6 @@ def initialize_mongodb_schema(db_manager):
 def initialize_database(config_path):
     """Initialize the database based on configuration"""
     db_manager = DatabaseManager(config_path)
-    import pdb; pdb.set_trace()
     try:
         if db_manager.db_type == 'sqlite':
             initialize_sqlite_schema(db_manager)

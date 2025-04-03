@@ -68,8 +68,8 @@ class DatabaseManager:
         self.db_type = db_type
 
         if db_type == 'sqlite':
-            # Ensure SQLite directory exists
-            sqlite_path = config['sqlite']['path']
+            raw_path = config['sqlite']['path']
+            sqlite_path = self._normalize_path(raw_path)
             os.makedirs(os.path.dirname(sqlite_path), exist_ok=True)
             return SQLiteManager(sqlite_path)
         elif db_type == 'mongodb':
@@ -79,6 +79,18 @@ class DatabaseManager:
             )
         else:
             raise DatabaseError(f"Unsupported database type: {db_type}")
+
+    def _normalize_path(self, path: str) -> str:
+        """
+        Normalize a file path to be OS-independent and absolute.
+        If path is relative, convert it to absolute path based on the project root.
+        """
+        normalized = os.path.normpath(path)
+
+        if not os.path.isabs(normalized):
+            normalized = os.path.abspath(normalized)
+
+        return normalized
 
     @staticmethod
     def create_sqlite_manager(db_path: str) -> SQLiteManager:
