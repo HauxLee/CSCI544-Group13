@@ -123,6 +123,12 @@ from datetime import datetime
 from agent import graph
 from langchain_core.messages import HumanMessage
 
+# imports for spider test
+import argparse
+from database import sqlite_db_manager
+import sys
+import re
+
 # Configure initial parameters
 thread_id = str(uuid.uuid4())
 config = {
@@ -163,7 +169,15 @@ def event_handler(event: dict, _printed: set, log_data: list, max_length=5000):
         message_content = message.content if hasattr(message, 'content') else ""
         
         # Skip duplicate messages by content
-        content_hash = hash(message_content)
+        if isinstance(message_content, (list, dict)):
+        # Use json.dumps for a canonical string representation of lists/dicts
+            content_for_hash = json.dumps(message_content, sort_keys=True)
+        else:
+            # Ensure any other type is converted to string
+            content_for_hash = str(message_content)
+
+        # Hash the string representation for duplicate checking
+        content_hash = hash(content_for_hash)
         if content_hash in _printed:
             return message
         
@@ -180,6 +194,11 @@ def event_handler(event: dict, _printed: set, log_data: list, max_length=5000):
 
         # Only print user-facing messages with improved formatting
         if message_type == 'ai':
+            if "COMPLETE TASK" in message_content:
+                # Instead of printing the signal, print a friendly closing message
+                print("\n🤖 You're welcome! Let me know if you need anything else.")
+                # We add the hash here because we *handled* this message, even if not printing its raw content
+                _printed.add(content_hash)
             # Skip internal messages
             if ("DECISION ANALYSIS" not in message_content and 
                 "COMPLETE TASK" not in message_content):
@@ -233,6 +252,9 @@ def event_handler(event: dict, _printed: set, log_data: list, max_length=5000):
         log_data.append(log_entry)
         return None
 
+        
+if 'TARGET_DB_PATH' in os.environ:
+    del os.environ['TARGET_DB_PATH']
 # Print welcome message with improved formatting
 print("\n" + "─" * 80)
 print("🤖 Welcome to Database Assistant!")

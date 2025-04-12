@@ -20,7 +20,6 @@ from sqlglot.errors import ParseError
 matplotlib.use('Agg')
 
 
-
 """
 tools.py
 
@@ -37,6 +36,20 @@ tools.py
 #   Input: None. Output: User input message (dict) or error message (str).
 #
 # ======================================
+
+# Define LOG_FILE_TOOL if you want separate logging for tools
+LOG_FILE_TOOL = "logs/tools.log"
+# Simple logger for the tool itself (optional)
+def log_tool(message: str):
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_entry = f"{timestamp} - TOOL LOG - {message}"
+    print(log_entry) # Print to console for visibility
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE_TOOL), exist_ok=True)
+        with open(LOG_FILE_TOOL, 'a', encoding='utf-8') as f:
+            f.write(log_entry + '\n')
+    except Exception:
+        pass # Avoid crashing tool if logging fails
 
 @tool
 def load_csv_file(
@@ -102,34 +115,44 @@ def get_user_input_tool(
         dict: A dictionary representing the user's input message to be added to the Agent's conversation,
              or a dictionary with an exit flag if the user wants to exit.
     """
-    try:
-        display_prompt = prompt if prompt else "\n👤 You: "
-        user_input_content = input(display_prompt).strip().lower()
+    non_interactive_mode = os.getenv('RUNNING_NON_INTERACTIVE', 'false').lower() == 'true'
 
-        # Check for exit commands
-        if user_input_content in ['exit', 'quit']:
-            return {
-                "exit": True,
-                "message": "Goodbye! Thanks for using Database Assistant."
+    if non_interactive_mode:
+        log_msg = "get_user_input_tool called in non-interactive mode. Returning default message."
+        log_tool(log_msg) # Use the tool's logger
+        # Return a dictionary that mimics a message structure if needed,
+        # or just a string. Returning a string is often simpler for the ToolNode.
+        # The content will end up in the ToolMessage passed back to the agent.
+        return "User input unavailable in non-interactive mode."
+    else:
+        try:
+            display_prompt = prompt if prompt else "\n👤 You: "
+            user_input_content = input(display_prompt).strip().lower()
+
+            # Check for exit commands
+            if user_input_content in ['exit', 'quit']:
+                return {
+                    "exit": True,
+                    "message": "Goodbye! Thanks for using Database Assistant."
+                }
+
+            combined_message = f"{user_input_content}"
+
+            user_message = {
+                "messages": [
+                    HumanMessage(
+                        content=combined_message
+                    )
+                ],
+                "sender": "Human"
             }
 
-        combined_message = f"{user_input_content}"
+            return user_message
 
-        user_message = {
-            "messages": [
-                HumanMessage(
-                    content=combined_message
-                )
-            ],
-            "sender": "Human"
-        }
-
-        return user_message
-
-    except Exception as e:
-        return {
-            "error": f"Failed to get user input. Error: {repr(e)}"
-        }
+        except Exception as e:
+            return {
+                "error": f"Failed to get user input. Error: {repr(e)}"
+            }
 @tool
 def validate_sql_query(
     query: Annotated[str, "The SQL query to validate."],
@@ -398,3 +421,15 @@ def get_database_schema(
 
 #     except Exception as e:
 #         return f"Failed to generate visualization. Error: {repr(e)}"
+import datetime
+LOG_FILE_TOOL = "logs/tools.log"
+def log(message: str):
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_entry = f"{timestamp} - {message}"
+    # print(log_entry) # Avoid double printing if called from main script's log
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE_TOOL), exist_ok=True)
+        with open(LOG_FILE_TOOL, 'a', encoding='utf-8') as f:
+            f.write(log_entry + '\n')
+    except Exception:
+        pass # Avoid crashing tool if logging fails

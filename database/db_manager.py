@@ -15,6 +15,25 @@ class DatabaseManager:
         self.config_path = config_path
         self.manager: Optional[Union[SQLiteManager, MongoDBManager]] = None
         self.db_type: Optional[str] = None
+         # --- START MODIFICATION ---
+        # Check for environment variable override first
+        target_db_path_env = os.getenv('TARGET_DB_PATH')
+        if target_db_path_env:
+            normalized_path = self._normalize_path(target_db_path_env)
+            if os.path.exists(normalized_path):
+                print(f"DEBUG: Using DB path from TARGET_DB_PATH: {normalized_path}") # Optional debug print
+                try:
+                    self.manager = SQLiteManager(normalized_path)
+                    self.db_type = 'sqlite'
+                    # Successfully initialized from env var, skip YAML config
+                    return # Exit __init__ early
+                except Exception as e:
+                    # Log or print a warning if env var connection fails, then fallback to config
+                    print(f"WARNING: Failed to connect using TARGET_DB_PATH '{normalized_path}': {e}. Falling back to config file.")
+            else:
+                 # Log or print a warning if path doesn't exist, then fallback to config
+                 print(f"WARNING: TARGET_DB_PATH '{normalized_path}' does not exist. Falling back to config file.")
+        # --- END MODIFICATION ---
         self._initialize_config()
         self.manager = self.create_manager(self.config_path)
 
