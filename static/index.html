@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Agent Chat</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Database Agent Interface</h1>
+
+        <div id="connection-area">
+            <h2>Connect to Database</h2>
+            <p>Enter the Database ID (e.g., path for SQLite) to connect:</p>
+            <div class="input-group">
+                <input type="text" id="db-id-input" placeholder="e.g., /path/to/your/database.sqlite">
+                <button id="connect-button">Connect</button>
+            </div>
+            <p id="connection-status" class="status"></p>
+        </div>
+
+        <div id="chat-area" class="hidden">
+            <h2>Chat with Agent</h2>
+            <p>Connected to: <strong id="connected-db-id"></strong></p>
+            <div id="chat-history">
+                </div>
+            <div id="input-area">
+                <input type="text" id="user-input" placeholder="Ask the agent..." disabled>
+                <button id="send-button" disabled>Send</button>
+            </div>
+             <p id="agent-status" class="status"></p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

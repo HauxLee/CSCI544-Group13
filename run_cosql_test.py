@@ -24,7 +24,7 @@ LOG_FILE = "logs/cosql_test_runner.log"
 # --- !!! TESTING CONFIGURATION !!! ---
 # Set MAX_DIALOGUES_TO_TEST to a number (e.g., 20) for cost-effective initial testing.
 # Set to None to run on the entire dataset.
-MAX_DIALOGUES_TO_TEST = 5 # <-- EDIT THIS VALUE FOR TESTING
+MAX_DIALOGUES_TO_TEST = 50 # <-- EDIT THIS VALUE FOR TESTING
 HISTORY_LIMIT = 10 # Max number of recent messages (Human/AI non-tool-call) to pass to agent
 # --- END TESTING CONFIGURATION ---
 
